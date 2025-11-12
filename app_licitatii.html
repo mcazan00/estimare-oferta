@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Estimator ofertă – Result-first</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --pine:#2E443E; --mist:#F7F7F7; --slate:#A9BFCF; --earth:#8B7355; }
+    html,body{ background:var(--mist); color:var(--pine); font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+    .card{ background:#fff; border:1px solid #EAEAEA; border-radius:20px; box-shadow:0 4px 18px rgba(0,0,0,.04); }
+    .pill{ border-radius:999px; }
+    .ghost{ background:#fff; border:1px solid #EAEAEA; }
+    .primary{ background:var(--pine); color:#fff; }
+    .sheet{ position:fixed; left:0; right:0; bottom:-100%; background:#fff; border-top-left-radius:20px; border-top-right-radius:20px; box-shadow:0 -10px 30px rgba(0,0,0,.15); transition:bottom .25s ease; }
+    .sheet.open{ bottom:0; }
+    .handle{ width:48px; height:5px; border-radius:999px; background:#E5E7EB; margin:8px auto 4px; }
+    .sep{ height:1px; background:#eee; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="max-w-4xl mx-auto px-4 md:px-6 py-6 space-y-6">
+
+    <!-- Header simplu + acțiuni -->
+    <header class="flex items-center justify-between gap-3">
+      <div class="space-y-1">
+        <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Estimator ofertă</h1>
+        <p class="text-sm text-gray-600">Rezultat imediat. Istoricul și setările sunt în „sertare”.</p>
+      </div>
+      <div class="flex gap-2">
+        <button id="btnOpenHistory" class="pill px-4 py-2 ghost hover:bg-gray-50 text-sm">Istoric</button>
+        <button id="btnOpenSettings" class="pill px-4 py-2 ghost hover:bg-gray-50 text-sm">Setări</button>
+      </div>
+    </header>
+
+    <!-- RESULT-FIRST: cardul principal sus -->
+    <section class="card p-5 md:p-6 space-y-4">
+      <!-- Inputs principale -->
+      <div class="grid md:grid-cols-2 gap-3">
+        <label class="block">
+          <span class="text-sm text-gray-700">Valoare licitație</span>
+          <input id="newVL" type="number" step="0.01" placeholder="ex. 1,250,000"
+                 class="mt-1 pill w-full px-4 py-3 ghost focus:outline-none focus:ring-2 focus:ring-emerald-600">
+        </label>
+        <label class="block">
+          <span class="text-sm text-gray-700">Greutatea prețului (%)</span>
+          <div class="mt-1 flex gap-2">
+            <input id="newPondere" type="number" step="0.01" placeholder="ex. 60"
+                   class="pill w-full px-4 py-3 ghost focus:outline-none focus:ring-2 focus:ring-emerald-600">
+            <div class="flex gap-1">
+              <button data-preset-pond="40" class="pill px-3 py-2 ghost text-xs">40</button>
+              <button data-preset-pond="60" class="pill px-3 py-2 ghost text-xs">60</button>
+              <button data-preset-pond="80" class="pill px-3 py-2 ghost text-xs">80</button>
+            </div>
+          </div>
+        </label>
+      </div>
+
+      <!-- Estimare live -->
+      <div class="rounded-2xl border border-gray-200 bg-white p-4 md:p-5 space-y-3">
+        <div class="text-sm text-gray-600">Estimare</div>
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <span id="estPct" class="pill px-4 py-2 bg-gray-50 border text-xl font-semibold">—</span>
+            <div class="text-xl md:text-2xl font-semibold" id="estVal">—</div>
+          </div>
+          <div class="text-sm text-gray-600" id="strategyNote"></div>
+        </div>
+        <div id="warnings" class="flex flex-wrap gap-2"></div>
+        <div class="flex flex-wrap gap-2 pt-1">
+          <button id="copySum" class="pill px-4 py-2 ghost text-sm">Copiază suma</button>
+          <button id="copyPct" class="pill px-4 py-2 ghost text-sm">Copiază procentul</button>
+          <button id="btnOpenHistory2" class="pill px-4 py-2 ghost text-sm">Importă istoric</button>
+        </div>
+      </div>
+
+      <!-- Quick choices -->
+      <div>
+        <div class="text-xs text-gray-500 mb-1">Alege dintr-un click</div>
+        <div id="quickChips" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <!-- Pe scurt (3 chips) -->
+      <div class="sep rounded my-1"></div>
+      <div class="flex items-center justify-between">
+        <div id="chips" class="flex flex-wrap gap-2"></div>
+      </div>
+      <div id="confidence" class="text-sm text-gray-700"></div>
+    </section>
+
+    <footer class="text-center text-xs text-gray-500 py-4">
+      Premisă: restul criteriilor au punctaj maxim pentru toți.
+    </footer>
+  </div>
+
+  <!-- SHEET: ISTORIC -->
+  <div id="historySheet" class="sheet max-h-[86vh]">
+    <div class="handle"></div>
+    <div class="p-4 md:p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold">Istoric</h3>
+        <div class="flex gap-2">
+          <button id="btnHistoryClose" class="pill px-3 py-2 ghost text-sm">Închide</button>
+        </div>
+      </div>
+
+      <div class="grid gap-3 md:grid-cols-[1fr_auto_auto_auto]">
+        <label class="block">
+          <span class="text-sm text-gray-700">CSV cu valorile (în orice ordine)</span>
+          <input id="fileInput" type="file" accept=".csv" class="mt-1 w-full pill px-4 py-2 ghost focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+        </label>
+        <button id="btnPaste" class="pill px-4 py-2 ghost hover:bg-gray-50 text-sm h-10 md:self-end">Lipește CSV</button>
+        <button id="btnSample" class="pill px-4 py-2 ghost hover:bg-gray-50 text-sm h-10 md:self-end">Exemplu</button>
+        <button id="btnExport" class="pill px-4 py-2 ghost hover:bg-gray-50 text-sm h-10 md:self-end">Export CSV</button>
+      </div>
+
+      <details class="rounded-xl border border-gray-100">
+        <summary class="cursor-pointer select-none px-3 py-2 text-sm text-gray-700">Adaugă manual (opțional)</summary>
+        <div class="p-3 grid md:grid-cols-5 gap-3">
+          <input id="inVL" type="number" step="0.01" placeholder="Valoare licitație" class="pill w-full px-4 py-2 ghost focus:ring-2 focus:ring-emerald-600">
+          <input id="inVN" type="number" step="0.01" placeholder="Oferta noastră" class="pill w-full px-4 py-2 ghost focus:ring-2 focus:ring-emerald-600">
+          <input id="inVC" type="number" step="0.01" placeholder="Oferta câștigătoare" class="pill w-full px-4 py-2 ghost focus:ring-2 focus:ring-emerald-600">
+          <input id="inPondere" type="number" step="0.01" placeholder="Greutate preț (%)" class="pill w-full px-4 py-2 ghost focus:ring-2 focus:ring-emerald-600">
+          <button id="btnAdd" class="pill px-4 py-2 primary hover:opacity-90">Adaugă</button>
+        </div>
+      </details>
+
+      <div class="overflow-auto border border-gray-200 rounded-2xl">
+        <table class="min-w-full">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="text-left text-xs font-semibold uppercase text-gray-500 p-3">#</th>
+              <th class="text-left text-xs font-semibold uppercase text-gray-500 p-3">Valoare licitație</th>
+              <th class="text-left text-xs font-semibold uppercase text-gray-500 p-3">Oferta noastră</th>
+              <th class="text-left text-xs font-semibold uppercase text-gray-500 p-3">Oferta câștigătoare</th>
+              <th class="text-left text-xs font-semibold uppercase text-gray-500 p-3">Greutate (%)</th>
+              <th class="text-left text-xs font-semibold uppercase text-gray-500 p-3">% câștigător</th>
+              <th class="text-left text-xs font-semibold uppercase text-gray-500 p-3">% noi</th>
+              <th class="text-left text-xs font-semibold uppercase text-gray-500 p-3">Dif. (pp)</th>
+              <th class="text-left text-xs font-semibold uppercase text-gray-500 p-3">Notă</th>
+              <th class="text-left text-xs font-semibold uppercase text-gray-500 p-3"></th>
+            </tr>
+          </thead>
+          <tbody id="historyTbody" class="bg-white"></tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between text-xs text-gray-500">
+        <div>Rânduri în istoric: <span id="dataCount">0</span></div>
+        <div id="undoHint"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SHEET: SETĂRI -->
+  <div id="settingsSheet" class="sheet max-h-[86vh]">
+    <div class="handle"></div>
+    <div class="p-4 md:p-6 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-lg font-semibold">Setări</h3>
+        <div class="flex gap-2">
+          <button id="btnReset" class="pill px-3 py-2 ghost text-sm">Reset</button>
+          <button id="btnSettingsClose" class="pill px-3 py-2 ghost text-sm">Închide</button>
+        </div>
+      </div>
+
+      <div class="grid md:grid-cols-4 gap-3">
+        <label class="block">
+          <span class="text-xs text-gray-500">Limită minimă ofertă (% VL)</span>
+          <input id="inClampMin" type="number" step="0.1" value="50" class="mt-1 pill w-full px-4 py-2 ghost focus:ring-2 focus:ring-emerald-600">
+        </label>
+        <label class="block">
+          <span class="text-xs text-gray-500">Limită maximă ofertă (% VL)</span>
+          <input id="inClampMax" type="number" step="0.1" value="120" class="mt-1 pill w-full px-4 py-2 ghost focus:ring-2 focus:ring-emerald-600">
+        </label>
+        <label class="block">
+          <span class="text-xs text-gray-500">Cost intern minim (lei)</span>
+          <input id="inCostMin" type="number" step="0.01" class="mt-1 pill w-full px-4 py-2 ghost focus:ring-2 focus:ring-emerald-600">
+        </label>
+        <label class="block">
+          <span class="text-xs text-gray-500">Plafon maxim client (lei)</span>
+          <input id="inPlafonMax" type="number" step="0.01" class="mt-1 pill w-full px-4 py-2 ghost focus:ring-2 focus:ring-emerald-600">
+        </label>
+      </div>
+
+      <div class="flex flex-wrap gap-2">
+        <button id="btnExportJson" class="pill px-4 py-2 ghost text-sm">Export JSON</button>
+        <button id="btnImportJson" class="pill px-4 py-2 ghost text-sm">Import JSON</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast UNDO -->
+  <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 hidden z-50">
+    <div class="bg-white border border-gray-200 rounded-2xl shadow px-4 py-2 text-sm flex gap-3 items-center">
+      <span id="toastMsg">Rând șters.</span>
+      <button id="toastUndo" class="text-emerald-700 font-medium">Anulează</button>
+    </div>
+  </div>
+
+<script>
+/* ====== STATE (robust) ====== */
+const SCHEMA_VERSION=2;
+const state={
+  rows:[],
+  settings:{clampMin:50, clampMax:120, costMin:null, plafonMax:null},
+  _bandLow:null,_bandHigh:null,_typical:null,_bestKey:'echilibrat',_a:0,_b:0,
+  _deletedBuffer:null,_undoTimer:null
+};
+
+/* ====== Utils ====== */
+const fmt=(x,d=0)=>x===null||Number.isNaN(x)?'—':x.toLocaleString('ro-RO',{maximumFractionDigits:d,minimumFractionDigits:d});
+const clamp=(x,lo,hi)=>Math.max(lo,Math.min(hi,x));
+const clamp01=x=>clamp(x,0,1);
+const mean=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:NaN;
+const percentile=(arr,p)=>{ if(!arr.length) return NaN; const s=[...arr].sort((a,b)=>a-b); const idx=clamp01(p)*(s.length-1); const lo=Math.floor(idx),hi=Math.ceil(idx); if(lo===hi) return s[lo]; const t=idx-lo; return s[lo]*(1-t)+s[hi]*t; };
+function toNumber(x){ if(x==null) return NaN; if(typeof x==='number') return x; const s=String(x).replace(/\u00A0|\s|\./g,'').replace(',','.'); const v=Number(s); return Number.isFinite(v)?v:NaN; }
+function chip(txt, kind='gray'){
+  const m={green:'bg-emerald-100 text-emerald-800',yellow:'bg-amber-100 text-amber-800',red:'bg-rose-100 text-rose-800',gray:'bg-gray-100 text-gray-700'};
+  return `<span class="pill px-3 py-2 text-sm ${m[kind]||m.gray}">${txt}</span>`;
+}
+function textBar(score){ const b=Math.round(clamp01(score)*5); return '■'.repeat(b)+'□'.repeat(5-b); }
+function escapeHTML(s){ return String(s||'').replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+
+/* ====== Persistență ====== */
+function saveAll(){ localStorage.setItem('licit_s_v',String(SCHEMA_VERSION)); localStorage.setItem('licit_rows',JSON.stringify(state.rows)); localStorage.setItem('licit_settings',JSON.stringify(state.settings)); }
+function loadAll(){ try{ state.rows=JSON.parse(localStorage.getItem('licit_rows')||'[]'); }catch{} try{ state.settings={...state.settings,...(JSON.parse(localStorage.getItem('licit_settings')||'{}'))}; }catch{} }
+
+/* ====== CSV robust ====== */
+function detectDelimiter(line){ const c=[',',';','\t']; let best=',',mx=0; for(const d of c){ const n=line.split(d).length; if(n>mx){mx=n; best=d;} } return best; }
+function parseCSVQuoted(text){
+  const lines=text.split(/\r?\n/).filter(l=>l.trim().length); if(!lines.length) return [];
+  const delim=detectDelimiter(lines[0]);
+  const parseLine=line=>{
+    const out=[]; let cur='',inQ=false;
+    for(let i=0;i<line.length;i++){
+      const c=line[i];
+      if(c==='\"'){ if(inQ && line[i+1]==='\"'){ cur+='\"'; i++; } else inQ=!inQ; }
+      else if(c===delim && !inQ){ out.push(cur); cur=''; }
+      else cur+=c;
+    }
+    out.push(cur);
+    return out.map(s=>s.trim().replace(/^"|"$/g,''));
+  };
+  const headers=parseLine(lines[0]).map(h=>h.toLowerCase());
+  const idx=headers.map(headerMap);
+  const out=[];
+  for(let i=1;i<lines.length;i++){
+    const cols=parseLine(lines[i]);
+    const rec={vl:NaN,vn:NaN,vc:NaN,pondere:NaN,nota:''};
+    for(let c=0;c<cols.length;c++){
+      const key=idx[c]; if(!key) continue;
+      if(key==='nota') rec.nota=cols[c]; else rec[key]=toNumber(cols[c]);
+    }
+    if([rec.vl,rec.vn,rec.vc,rec.pondere].every(Number.isFinite)) out.push(rec);
+  }
+  return out;
+}
+function headerMap(h){
+  if(/(valoare).*licit/.test(h)||/tender.*value|estimate|contract value/.test(h)) return 'vl';
+  if(/(valoare).*noi/.test(h)||/our.*bid|own.*offer/.test(h)) return 'vn';
+  if(/(valoare).*(câș|castig|winner)/.test(h)) return 'vc';
+  if(/pondere.*(valoare|pret)|price.*weight|weight.*price/.test(h)) return 'pondere';
+  if(/nota|note|comment/.test(h)) return 'nota';
+  return null;
+}
+function rowsToCSV(rows){
+  const header=['valoare_licitatie','valoare_noi','valoare_castigator','pondere_valoare_pct','nota'];
+  const esc=s=>{ if(s==null) return ''; const need=/[",\n;]/.test(s); let t=String(s).replace(/"/g,'""'); return need?`"${t}"`:t; };
+  const body=rows.map(r=>[r.vl,r.vn,r.vc,r.pondere,esc(r.nota)].join(','));
+  return [header.join(','),...body].join('\n');
+}
+function download(name,text,mime='text/plain'){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type:mime})); a.download=name; a.click(); }
+
+/* ====== Recompute & UI ====== */
+function recompute(){
+  state.rows = state.rows.map(r=>{
+    const winPct=r.vc/r.vl, ourPct=r.vn/r.vl, diffPct=ourPct-winPct;
+    return {...r,winPct,ourPct,diffPct};
+  }).filter(r=>Number.isFinite(r.winPct)&&Number.isFinite(r.pondere));
+  saveAll();
+  const cnt=document.querySelectorAll('#dataCount'); cnt.forEach(el=>el.textContent=state.rows.length);
+  renderSummary();
+  renderTable();
+  updateQuickChips();
+  liveEstimate(); // actualizează imediat
+}
+function renderSummary(){
+  const chips=document.getElementById('chips');
+  const conf=document.getElementById('confidence');
+  if(!state.rows.length){ chips.innerHTML=''; conf.textContent='Adaugă cel puțin 3 rânduri pentru o imagine stabilă.'; return; }
+
+  const wins=state.rows.map(r=>r.winPct).filter(Number.isFinite);
+  const diffs=state.rows.map(r=>r.diffPct).filter(Number.isFinite);
+  const typ=percentile(wins,0.5), low=percentile(wins,0.4), high=percentile(wins,0.6);
+  const closeRate=Math.round(100*(diffs.filter(d=>Math.abs(d)<=0.01).length/diffs.length));
+  const nearColor=closeRate>=60?'green':(closeRate>=30?'yellow':'red');
+
+  chips.innerHTML=[
+    chip(`De obicei: ${fmt(typ*100,1)}%`,'green'),
+    chip(`Interval: ${fmt(low*100,1)}–${fmt(high*100,1)}%`,'gray'),
+    chip(`Aproape în ${closeRate}% din cazuri`,nearColor)
+  ].join('');
+
+  const w=state.rows.map(r=>r.pondere), mx=mean(w), my=mean(wins);
+  let num=0,den=0; for(let i=0;i<wins.length;i++){ num+=(w[i]-mx)*(wins[i]-my); den+=(w[i]-mx)**2; }
+  state._b=den===0?0:num/den; state._a=my-state._b*mx;
+  state._typical=typ; state._bandLow=low; state._bandHigh=high;
+
+  const width=Math.abs(high-low), n=state.rows.length;
+  let score=0; if(n>=3) score+=Math.min(1,(n-3)/7)*0.6; score+=(1-clamp((width-0.02)/0.1,0,1))*0.4;
+  const level=score>0.75?'Ridicat':(score>0.45?'Mediu':'Scăzut');
+  conf.innerHTML = chip(`Încredere: ${level} · ${textBar(score)}`, level==='Ridicat'?'green':(level==='Mediu'?'yellow':'red'));
+}
+function renderTable(){
+  const tb=document.getElementById('historyTbody'); if(!tb) return;
+  tb.innerHTML='';
+  state.rows.forEach((r,i)=>{
+    const highlit=(r.vc>r.vl||r.vn>r.vl)?'bg-rose-50':'';
+    const tr=document.createElement('tr');
+    tr.className=highlit;
+    tr.innerHTML=`
+      <td class="p-3 text-sm text-gray-500">${i+1}</td>
+      <td class="p-3 text-sm">${fmt(r.vl,0)}</td>
+      <td class="p-3 text-sm">${fmt(r.vn,0)} <span class="text-xs text-gray-400">(${fmt(r.ourPct*100,1)}%)</span></td>
+      <td class="p-3 text-sm">${fmt(r.vc,0)} <span class="text-xs text-gray-400">(${fmt(r.winPct*100,1)}%)</span></td>
+      <td class="p-3 text-sm">${fmt(r.pondere,1)}%</td>
+      <td class="p-3 text-sm">${fmt(r.winPct*100,2)}%</td>
+      <td class="p-3 text-sm">${fmt(r.ourPct*100,2)}%</td>
+      <td class="p-3 text-sm ${r.diffPct>0?'text-rose-600':'text-emerald-700'}">${fmt(r.diffPct*100,2)} pp</td>
+      <td class="p-3 text-sm">
+        <button class="pill px-2 py-1 ghost text-xs" onclick="editNote(${i})">📝</button>
+        <div class="text-xs text-gray-500 mt-1 line-clamp-2">${escapeHTML(r.nota)}</div>
+      </td>
+      <td class="p-3 text-sm text-right"><button class="pill px-2 py-1 bg-rose-50 text-rose-700 text-xs" onclick="removeRow(${i})">Șterge</button></td>`;
+    tb.appendChild(tr);
+  });
+}
+
+/* ====== Estimare ====== */
+function clampPct(p){
+  const lo=(toNumber(document.getElementById('inClampMin')?.value)||state.settings.clampMin)/100;
+  const hi=(toNumber(document.getElementById('inClampMax')?.value)||state.settings.clampMax)/100;
+  return clamp(p,lo,hi);
+}
+function bestEstimate(vl,pond){
+  const eq=clampPct(state._typical||0.9);
+  const ad=clampPct((state._a||0)+(state._b||0)*pond);
+  if(!Number.isFinite(pond) || !isFinite(ad) || ad<=0) return {label:'Ca de obicei', pct:eq, note:'aliniat cu modul în care se câștigă de obicei'};
+  const mid=(state._bandLow+state._bandHigh)/2;
+  return Math.abs(ad-mid)<Math.abs(eq-mid)
+    ? {label:'Adaptată după greutatea prețului', pct:ad, note:'se ajustează după cât contează prețul'}
+    : {label:'Ca de obicei', pct:eq, note:'aliniat cu modul în care se câștigă de obicei'};
+}
+function renderWarnings(val){
+  const w=document.getElementById('warnings');
+  w.innerHTML='';
+  const cost=toNumber(document.getElementById('inCostMin')?.value);
+  // SCOATEM „peste plafon”
+  if(Number.isFinite(cost) && val<cost){
+    w.innerHTML+=`<span class="pill px-3 py-1 bg-rose-100 text-rose-800 text-sm">Sub cost: +${fmt((cost/val-1)*100,1)}%</span>`;
+  }
+}
+function liveEstimate(){
+  const vl=toNumber(document.getElementById('newVL').value);
+  const p=toNumber(document.getElementById('newPondere').value);
+  if(!Number.isFinite(vl)||vl<=0||!state._typical){
+    document.getElementById('estPct').textContent='—';
+    document.getElementById('estVal').textContent='—';
+    document.getElementById('strategyNote').textContent='';
+    document.getElementById('warnings').innerHTML='';
+    return;
+  }
+  const rec=bestEstimate(vl,p);
+  const val=vl*rec.pct;
+  document.getElementById('estPct').textContent = `${fmt(rec.pct*100,2)}%`;
+  document.getElementById('estVal').textContent = `≈ ${fmt(val,0)}`;
+  document.getElementById('strategyNote').textContent = `Strategie: ${rec.label} — ${rec.note}.`;
+  renderWarnings(val);
+}
+function updateQuickChips(){
+  const box=document.getElementById('quickChips');
+  const vl=toNumber(document.getElementById('newVL').value);
+  if(!Number.isFinite(vl)||vl<=0||!state._typical){ box.innerHTML=''; return; }
+  const opts=[
+    {k:'Puțin peste concurență', p:clampPct(state._bandHigh||state._typical)},
+    {k:'Ca de obicei',           p:clampPct(state._typical||0.9)},
+    {k:'Puțin sub concurență',   p:clampPct(state._bandLow||state._typical)}
+  ];
+  box.innerHTML = opts.map(o=>`<button data-pct="${o.p}" class="pill px-3 py-2 ghost text-sm hover:bg-gray-50">${o.k} · ${(o.p*100).toFixed(1)}% · ≈ ${fmt(vl*o.p,0)}</button>`).join('');
+}
+
+/* ====== Notițe / Ștergere / UNDO ====== */
+function editNote(i){ const cur=state.rows[i].nota||''; const val=prompt('Notă pentru acest rând:',cur); if(val===null) return; state.rows[i].nota=val; recompute(); }
+function removeRow(i){ const rem=state.rows.splice(i,1)[0]; state._deletedBuffer={row:rem,index:i}; recompute(); showToast('Rând șters.'); }
+function showToast(msg){ const t=document.getElementById('toast'); document.getElementById('toastMsg').textContent=msg; t.classList.remove('hidden'); clearTimeout(state._undoTimer); state._undoTimer=setTimeout(()=>{ hideToast(); state._deletedBuffer=null; },5000); }
+function hideToast(){ document.getElementById('toast').classList.add('hidden'); }
+document.getElementById('toastUndo').addEventListener('click',()=>{ if(state._deletedBuffer){ const {row,index}=state._deletedBuffer; state.rows.splice(index,0,row); state._deletedBuffer=null; recompute(); } hideToast(); });
+
+/* ====== I/O ====== */
+function parseCSV(text){ try{ return parseCSVQuoted(text); }catch{ alert('CSV invalid.'); return []; } }
+function openSheet(el){ el.classList.add('open'); document.body.style.overflow='hidden'; }
+function closeSheet(el){ el.classList.remove('open'); document.body.style.overflow=''; }
+
+/* ====== INIT & events ====== */
+loadAll(); recompute();
+
+/* Paste detector global: dacă pare CSV, oferim import rapid */
+document.addEventListener('paste', (e)=>{
+  const t=(e.clipboardData || window.clipboardData).getData('text');
+  if(!t) return;
+  const looksCSV = /(valoare.*licit|valoare.*noi|castig|winner|pondere)/i.test(t) && /[,;\t]/.test(t);
+  if(looksCSV){ if(confirm('Am detectat un CSV. Îl import?')){ const rows=parseCSV(t); if(rows.length){ state.rows=rows; recompute(); } } }
+});
+
+/* Live calc pe inputuri */
+['newVL','newPondere'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',()=>{ updateQuickChips(); liveEstimate(); renderSummary(); });
+});
+
+/* Quick chips click */
+document.getElementById('quickChips').addEventListener('click',(e)=>{
+  const btn=e.target.closest('button[data-pct]'); if(!btn) return;
+  const vl=toNumber(document.getElementById('newVL').value); if(!Number.isFinite(vl)||vl<=0){ alert('Introdu VL.'); return; }
+  const pct=Number(btn.dataset.pct); const val=vl*pct;
+  document.getElementById('estPct').textContent=`${fmt(pct*100,2)}%`;
+  document.getElementById('estVal').textContent=`≈ ${fmt(val,0)}`;
+  document.getElementById('strategyNote').textContent='Strategie selectată manual.';
+  renderWarnings(val);
+});
+
+/* Copy */
+document.getElementById('copySum').addEventListener('click',()=>{ const t=document.getElementById('estVal').textContent.replace(/[^0-9.,]/g,''); navigator.clipboard.writeText(t); });
+document.getElementById('copyPct').addEventListener('click',()=>{ const t=document.getElementById('estPct').textContent.replace(/[^0-9.,]/g,''); navigator.clipboard.writeText(t); });
+
+/* Sheets open/close */
+const historySheet=document.getElementById('historySheet');
+const settingsSheet=document.getElementById('settingsSheet');
+document.getElementById('btnOpenHistory').addEventListener('click',()=>openSheet(historySheet));
+document.getElementById('btnOpenHistory2').addEventListener('click',()=>openSheet(historySheet));
+document.getElementById('btnHistoryClose').addEventListener('click',()=>closeSheet(historySheet));
+document.getElementById('btnOpenSettings').addEventListener('click',()=>openSheet(settingsSheet));
+document.getElementById('btnSettingsClose').addEventListener('click',()=>closeSheet(settingsSheet));
+
+/* CSV file input */
+document.getElementById('fileInput').addEventListener('change',()=>{
+  const f=fileInput.files[0]; if(!f) return; const r=new FileReader();
+  r.onload=e=>{ const rows=parseCSV(e.target.result); if(!rows.length){ alert('CSV invalid.'); return; } state.rows=rows; recompute(); };
+  r.readAsText(f);
+});
+
+/* Paste CSV (manual din sheet) */
+document.getElementById('btnPaste').addEventListener('click',()=>{
+  const t=prompt('Lipește aici CSV-ul (cu header):'); if(!t) return;
+  const rows=parseCSV(t); if(!rows.length){ alert('CSV invalid.'); return; } state.rows=rows; recompute();
+});
+
+/* CSV sample + export */
+document.getElementById('btnSample').addEventListener('click',()=>{
+  const sample=[['valoare_licitatie','valoare_noi','valoare_castigator','pondere_valoare_pct','nota'],
+  [1000000,950000,930000,60,'concurență 4 ofertanți'],
+  [1200000,1120000,1100000,60,''],
+  [800000,760000,755000,50,'criterii tehnice 30%'],
+  [1500000,1430000,1400000,70,'licitație mare']].map(r=>r.join(',')).join('\n');
+  download('istoric_exemplu.csv',sample,'text/csv');
+});
+document.getElementById('btnExport').addEventListener('click',()=>download('istoric_licitatii.csv',rowsToCSV(state.rows),'text/csv'));
+
+/* Export/Import JSON în Setări */
+document.getElementById('btnExportJson').addEventListener('click',()=>{
+  const payload={schema:SCHEMA_VERSION,settings:state.settings,rows:state.rows};
+  download('istoric_licitatii.json',JSON.stringify(payload,null,2),'application/json');
+});
+document.getElementById('btnImportJson').addEventListener('click',()=>{
+  const pick=document.createElement('input'); pick.type='file'; pick.accept='.json,application/json';
+  pick.onchange=()=>{
+    const f=pick.files[0]; if(!f) return; const r=new FileReader();
+    r.onload=e=>{
+      try{
+        const data=JSON.parse(e.target.result);
+        state.settings={...state.settings,...(data.settings||{})};
+        state.rows=(data.rows||[]).map(r=>({nota:'',...r}));
+        document.getElementById('inClampMin').value=state.settings.clampMin??50;
+        document.getElementById('inClampMax').value=state.settings.clampMax??120;
+        document.getElementById('inCostMin').value=state.settings.costMin??'';
+        document.getElementById('inPlafonMax').value=state.settings.plafonMax??'';
+        recompute();
+      }catch{ alert('JSON invalid.'); }
+    };
+    r.readAsText(f);
+  };
+  pick.click();
+});
+
+/* Add row (în sheet) */
+document.getElementById('btnAdd').addEventListener('click',()=>{
+  const vl=toNumber(document.getElementById('inVL').value);
+  const vn=toNumber(document.getElementById('inVN').value);
+  const vc=toNumber(document.getElementById('inVC').value);
+  let p=toNumber(document.getElementById('inPondere').value);
+  if(![vl,vn,vc,p].every(Number.isFinite)){ alert('Completează numeric toate câmpurile.'); return; }
+  if(p>0 && p<=1){ p=p*100; }
+  state.rows.push({vl,vn,vc,pondere:p,nota:''});
+  ['inVL','inVN','inVC','inPondere'].forEach(id=>document.getElementById(id).value='');
+  recompute();
+});
+
+/* Setări (în sheet) */
+['inClampMin','inClampMax','inCostMin','inPlafonMax'].forEach(id=>{
+  const el=document.getElementById(id);
+  el.addEventListener('input',()=>{
+    state.settings.clampMin = toNumber(document.getElementById('inClampMin').value)||50;
+    state.settings.clampMax = toNumber(document.getElementById('inClampMax').value)||120;
+    state.settings.costMin  = toNumber(document.getElementById('inCostMin').value);
+    state.settings.plafonMax= toNumber(document.getElementById('inPlafonMax').value);
+    saveAll(); updateQuickChips(); liveEstimate();
+  });
+});
+
+/* Reset total */
+document.getElementById('btnReset').addEventListener('click',()=>{
+  if(!confirm('Șterg toate datele și setările?')) return;
+  state.rows=[]; state.settings={clampMin:50,clampMax:120,costMin:null,plafonMax:null};
+  ['inClampMin','inClampMax','inCostMin','inPlafonMax'].forEach((id,i)=>{
+    const def=[50,120,'',''][i]; const el=document.getElementById(id); if(el) el.value=def;
+  });
+  ['newVL','newPondere'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  recompute();
+});
+
+/* UNDO hint */
+function setUndoHint(msg){ const el=document.getElementById('undoHint'); if(!el) return; el.textContent=msg||''; }
+</script>
+</body>
+</html>
