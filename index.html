@@ -30,8 +30,9 @@
         <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Estimator ofertă</h1>
         <p class="text-sm text-gray-600">Introdu valoarea licitației → Calculează → vezi estimarea.</p>
       </div>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap gap-2 justify-end">
         <button id="btnOpenHistory" class="pill px-4 py-2 ghost hover:bg-gray-50 text-sm">Istoric</button>
+        <button id="btnOpenHistory2" class="pill px-4 py-2 ghost hover:bg-gray-50 text-sm">Importă istoric</button>
         <button id="btnOpenSettings" class="pill px-4 py-2 ghost hover:bg-gray-50 text-sm">Setări</button>
       </div>
     </header>
@@ -49,34 +50,70 @@
         </div>
       </div>
 
-      <!-- Estimare (apare după click) -->
-      <div id="estimateBox" class="rounded-2xl border border-gray-200 bg-white p-4 md:p-5 space-y-3 hidden">
-        <div class="text-sm text-gray-600">Estimare</div>
-        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-          <div class="flex items-center gap-3">
-            <span id="estPct" class="pill px-4 py-2 bg-gray-50 border text-xl font-semibold">—</span>
-            <div class="text-xl md:text-2xl font-semibold" id="estVal">—</div>
+      <!-- Rezultat + poziționare (apare după click) -->
+      <div id="estimateBox" class="rounded-2xl border border-gray-200 bg-white p-4 md:p-5 space-y-4 hidden">
+        <!-- Header: titlu + încredere -->
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="text-[11px] font-semibold tracking-wide text-gray-500 uppercase">
+              Poziționare față de concurență
+            </div>
+            <div class="text-xs text-gray-500">
+              Alege strategia și vezi suma recomandată.
+            </div>
           </div>
-          <div class="text-sm text-gray-600" id="strategyNote"></div>
+          <div id="confidence" class="text-[11px] md:text-xs text-gray-600 text-right"></div>
         </div>
-        <div id="warnings" class="flex flex-wrap gap-2"></div>
-        <div class="flex flex-wrap gap-2 pt-1">
-          <button id="copySum" class="pill px-4 py-2 ghost text-sm">Copiază suma</button>
-          <button id="copyPct" class="pill px-4 py-2 ghost text-sm">Copiază procentul</button>
-          <button id="btnOpenHistory2" class="pill px-4 py-2 ghost text-sm">Importă istoric</button>
+
+        <!-- Segment control strategii -->
+        <div id="quickChips" class="mt-2"></div>
+
+        <!-- Suma + procent + avertismente -->
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4 pt-3 border-t border-gray-100">
+          <!-- Suma ofertă propusă -->
+          <div>
+            <div class="text-[11px] font-medium tracking-wide text-gray-500 uppercase mb-1">
+              Suma ofertă propusă
+            </div>
+            <div class="flex items-baseline gap-2">
+              <div id="estVal"
+                   class="text-3xl md:text-4xl font-semibold leading-none tracking-tight">
+                —
+              </div>
+              <button id="copySum"
+                      class="pill px-2 py-1 ghost text-xs"
+                      title="Copiază suma">
+                ⧉
+              </button>
+            </div>
+            <div class="text-xs text-gray-500 mt-1">
+              Valoarea licitației × procentul ales
+            </div>
+          </div>
+
+          <!-- Procent + strategie + avertismente -->
+          <div class="flex flex-col gap-2 md:items-end md:text-right text-xs md:text-sm text-gray-600">
+            <div class="flex items-center gap-2">
+              <span id="estPct"
+                    class="pill px-3 py-1 bg-gray-50 border text-sm md:text-base font-semibold">
+                —
+              </span>
+              <button id="copyPct"
+                      class="pill px-2 py-1 ghost text-xs"
+                      title="Copiază procentul">
+                ⧉
+              </button>
+            </div>
+            <div id="strategyNote"></div>
+            <div id="warnings"
+                 class="flex flex-wrap gap-2 justify-start md:justify-end"></div>
+          </div>
         </div>
       </div>
 
-      <!-- Opțiuni rapide (după ce ai VL & istoric) -->
-      <div>
-        <div class="text-xs text-gray-500 mb-1">Alege dintr-un click</div>
-        <div id="quickChips" class="flex flex-wrap gap-2"></div>
-      </div>
-
-      <!-- Pe scurt -->
+      <!-- Pe scurt / detalii calcul -->
       <div class="sep rounded my-1"></div>
-      <div id="chips" class="flex flex-wrap gap-2"></div>
-      <div id="confidence" class="text-sm text-gray-700"></div>
+      <div id="chips" class="text-sm text-gray-700"></div>
     </section>
 
     <footer class="text-center text-xs text-gray-500 py-4">
@@ -197,7 +234,8 @@ const state={
   settings:{clampMin:50, clampMax:120, costMin:null, plafonMax:null},
   _bandLow:null,_bandHigh:null,_typical:null,
   _a:0,_b:0,_r2:0,_pondEffective:false,_meanPond:null,
-  _deletedBuffer:null,_undoTimer:null
+  _deletedBuffer:null,_undoTimer:null,
+  _activePct:null
 };
 
 /* ====== Utils ====== */
@@ -208,10 +246,6 @@ const mean=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:NaN;
 const variance=a=>{ if(a.length<2) return 0; const m=mean(a); return a.reduce((s,v)=>s+(v-m)*(v-m),0)/a.length; };
 const percentile=(arr,p)=>{ if(!arr.length) return NaN; const s=[...arr].sort((a,b)=>a-b); const idx=clamp01(p)*(s.length-1); const lo=Math.floor(idx),hi=Math.ceil(idx); if(lo===hi) return s[lo]; const t=idx-lo; return s[lo]*(1-t)+s[hi]*t; };
 function toNumber(x){ if(x==null) return NaN; if(typeof x==='number') return x; const s=String(x).replace(/\u00A0|\s|\./g,'').replace(',','.'); const v=Number(s); return Number.isFinite(v)?v:NaN; }
-function chip(txt, kind='gray'){
-  const m={green:'bg-emerald-100 text-emerald-800',yellow:'bg-amber-100 text-amber-800',red:'bg-rose-100 text-rose-800',gray:'bg-gray-100 text-gray-700'};
-  return `<span class="pill px-3 py-2 text-sm ${m[kind]||m.gray}">${txt}</span>`;
-}
 function textBar(score){ const b=Math.round(clamp01(score)*5); return '■'.repeat(b)+'□'.repeat(5-b); }
 function escapeHTML(s){ return String(s||'').replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
 
@@ -280,7 +314,11 @@ function recompute(){
 function renderSummary(){
   const chips=document.getElementById('chips');
   const conf=document.getElementById('confidence');
-  if(!state.rows.length){ chips.innerHTML=''; conf.textContent='Adaugă cel puțin 3 rânduri pentru o imagine stabilă.'; return; }
+  if(!state.rows.length){
+    chips.innerHTML='';
+    if(conf) conf.textContent='';
+    return;
+  }
 
   const wins=state.rows.map(r=>r.winPct).filter(Number.isFinite);
   const diffs=state.rows.map(r=>r.diffPct).filter(Number.isFinite);
@@ -293,7 +331,6 @@ function renderSummary(){
   let num=0, den=0, ssTot=0, ssRes=0;
   for(let i=0;i<wins.length;i++){ num+=(w[i]-mx)*(wins[i]-my); den+=(w[i]-mx)**2; }
   const b=den===0?0:num/den; const a=my-b*mx;
-  // R²
   for(let i=0;i<wins.length;i++){
     const y=wins[i], yhat=a+b*w[i];
     ssTot+=(y-my)*(y-my);
@@ -303,24 +340,41 @@ function renderSummary(){
 
   state._a=a; state._b=b; state._r2=r2; state._meanPond=mx;
 
-  // criteriu „influențează?”
-  // praguri blânde: |b| >= 0.001 (0.1 pp per 1% pondere) și R² >= 0.05 și var(pondere) > 0
   const pondVar = variance(w);
   state._pondEffective = (Math.abs(b) >= 0.001) && (r2 >= 0.05) && (pondVar > 0);
-
-  const closeRate=Math.round(100*(diffs.filter(d=>Math.abs(d)<=0.01).length/diffs.length));
-  const nearColor=closeRate>=60?'green':(closeRate>=30?'yellow':'red');
-
-  chips.innerHTML=[
-    chip(`De obicei: ${fmt(typ*100,1)}%`,'green'),
-    chip(`Interval: ${fmt(low*100,1)}–${fmt(high*100,1)}%`,'gray'),
-    chip(state._pondEffective ? 'Ponderea influențează recomandarea' : 'Ponderea NU influențează', state._pondEffective?'yellow':'gray')
-  ].join('');
 
   const width=Math.abs(high-low), n=state.rows.length;
   let score=0; if(n>=3) score+=Math.min(1,(n-3)/7)*0.6; score+=(1-clamp((width-0.02)/0.1,0,1))*0.4;
   const level=score>0.75?'Ridicat':(score>0.45?'Mediu':'Scăzut');
-  conf.innerHTML = chip(`Încredere: ${level} · ${textBar(score)}`, level==='Ridicat'?'green':(level==='Mediu'?'yellow':'red'));
+
+  if(conf){
+    conf.innerHTML =
+      `<span class="text-[11px] md:text-xs text-gray-600">
+        Nivel de încredere: <span class="font-medium">${level}</span>
+        · <span class="font-mono">${textBar(score)}</span>
+      </span>`;
+  }
+
+  const baseStrategy = state._pondEffective ? 'Adaptată după istoricul tău' : 'Ca de obicei';
+
+  chips.innerHTML = `
+    <div class="space-y-1 text-xs md:text-sm text-gray-700">
+      <div class="font-medium text-gray-800 mb-1">Detaliile calculului</div>
+      <div><span class="font-medium">Strategie de bază:</span> ${baseStrategy} (${fmt(typ*100,1)}%)</div>
+      <div><span class="font-medium">Interval tipic câștigător:</span> ${fmt(low*100,1)}–${fmt(high*100,1)}%</div>
+      <div><span class="font-medium">Nivel de încredere:</span> ${level} ${textBar(score)}</div>
+      <div>
+        <span class="font-medium">Impact pondere preț:</span>
+        ${state._pondEffective
+          ? 'Ponderea prețului a influențat rezultatul estimării.'
+          : 'Ponderea prețului nu a influențat semnificativ calculul.'}
+        <span class="text-gray-400 text-[11px]"
+              title="Ne uităm la istoricul tău: dacă relația dintre ponderea prețului și procentul câștigător este puternică, o folosim în estimare.">
+          ⓘ
+        </span>
+      </div>
+    </div>
+  `;
 }
 function renderTable(){
   const tb=document.getElementById('historyTbody'); if(!tb) return;
@@ -355,13 +409,11 @@ function clampPct(p){
 }
 function bestEstimate(vl){
   if(!Number.isFinite(state._typical)){ return {pct:NaN, label:'—', note:''}; }
-  // dacă ponderea influențează, folosesc adaptiv cu media ponderilor (fără să cer input pe ecranul principal)
   if(state._pondEffective && Number.isFinite(state._meanPond)){
     const p = clampPct(state._a + state._b * state._meanPond);
     return {pct:p, label:'Adaptată după istoricul tău', note:`Ponderea prețului contează; am folosit media din istoric (${fmt(state._meanPond,1)}%).`};
   }
-  // altfel, „ca de obicei”
-  return {pct:clampPct(state._typical), label:'Ca de obicei', note:'Ignorăm ponderea (nu influențează semnificativ în istoricul tău).'};
+  return {pct:clampPct(state._typical), label:'Ca de obicei', note:'Recomandare'};
 }
 function renderWarnings(val){
   const w=document.getElementById('warnings'); w.innerHTML='';
@@ -379,25 +431,59 @@ function calculate(){
   const rec=bestEstimate(vl);
   const val=vl*rec.pct;
 
+  state._activePct = rec.pct; // Ca de obicei = recomandare inițială
+
   document.getElementById('estPct').textContent = `${fmt(rec.pct*100,2)}%`;
   document.getElementById('estVal').textContent = `≈ ${fmt(val,0)}`;
   document.getElementById('strategyNote').textContent = `Strategie: ${rec.label} — ${rec.note}`;
   renderWarnings(val);
   box.classList.remove('hidden');
 
-  // actualizez și quickChips
   updateQuickChips();
 }
 function updateQuickChips(){
   const box=document.getElementById('quickChips');
+  if(!box) return;
   const vl=toNumber(document.getElementById('newVL').value);
-  if(!Number.isFinite(vl)||vl<=0||!state._typical){ box.innerHTML=''; return; }
+  if(!Number.isFinite(vl)||vl<=0||!state._typical){
+    box.innerHTML='';
+    return;
+  }
   const opts=[
-    {k:'Puțin peste concurență', p:clampPct(state._bandHigh||state._typical)},
-    {k:'Ca de obicei',           p:clampPct(state._typical||0.9)},
-    {k:'Puțin sub concurență',   p:clampPct(state._bandLow||state._typical)}
+    {k:'Puțin sub concurență',   key:'sub',  p:clampPct(state._bandLow||state._typical)},
+    {k:'Ca de obicei',           key:'med',  p:clampPct(state._typical||0.9)},
+    {k:'Puțin peste concurență', key:'sus',  p:clampPct(state._bandHigh||state._typical)}
   ];
-  box.innerHTML = opts.map(o=>`<button data-pct="${o.p}" class="pill px-3 py-2 ghost text-sm hover:bg-gray-50">${o.k} · ${(o.p*100).toFixed(1)}% · ≈ ${fmt(vl*o.p,0)}</button>`).join('');
+
+  if(!Number.isFinite(state._activePct)){
+    state._activePct = opts[1].p; // default "Ca de obicei"
+  }
+
+  const segments = opts.map((o,idx)=>{
+    const isActive = Math.abs(o.p - state._activePct) < 1e-6;
+    const recommended = (idx===1); // "Ca de obicei"
+    return `
+      <button data-pct="${o.p}"
+              class="pill px-3 py-2 text-xs md:text-sm ${isActive
+                ? 'bg-white shadow-sm border border-emerald-600 text-emerald-800'
+                : 'border border-transparent text-gray-600 hover:text-gray-900'}">
+        <div class="flex flex-col items-start text-left">
+          <span class="font-medium">
+            ${o.k}${recommended ? ' (recomandat)' : ''}
+          </span>
+          <span class="text-[11px] md:text-xs text-gray-500">
+            ${(o.p*100).toFixed(1)}% · ≈ ${fmt(vl*o.p,0)}
+          </span>
+        </div>
+      </button>
+    `;
+  }).join('');
+
+  box.innerHTML = `
+    <div class="inline-flex flex-wrap gap-1 rounded-full bg-gray-50 p-1">
+      ${segments}
+    </div>
+  `;
 }
 
 /* ====== Notițe / Ștergere / UNDO ====== */
@@ -418,13 +504,18 @@ document.getElementById('btnCalc').addEventListener('click', calculate);
 
 document.getElementById('quickChips').addEventListener('click',(e)=>{
   const btn=e.target.closest('button[data-pct]'); if(!btn) return;
-  const vl=toNumber(document.getElementById('newVL').value); if(!Number.isFinite(vl)||vl<=0){ alert('Introdu VL.'); return; }
-  const pct=Number(btn.dataset.pct); const val=vl*pct;
-  document.getElementById('estPct').textContent=`${fmt(pct*100,2)}%`;
-  document.getElementById('estVal').textContent=`≈ ${fmt(val,0)}`;
-  document.getElementById('strategyNote').textContent='Strategie selectată manual.';
-  renderWarnings(val);
-  document.getElementById('estimateBox').classList.remove('hidden');
+  const vl=toNumber(document.getElementById('newVL').value); if(!Number.isNaN(vl)&&vl>0){
+    const pct=Number(btn.dataset.pct); const val=vl*pct;
+    state._activePct = pct;
+    document.getElementById('estPct').textContent=`${fmt(pct*100,2)}%`;
+    document.getElementById('estVal').textContent=`≈ ${fmt(val,0)}`;
+    document.getElementById('strategyNote').textContent='Strategie selectată manual.';
+    renderWarnings(val);
+    document.getElementById('estimateBox').classList.remove('hidden');
+    updateQuickChips();
+  }else{
+    alert('Introdu VL.');
+  }
 });
 
 document.getElementById('copySum').addEventListener('click',()=>{ const t=document.getElementById('estVal').textContent.replace(/[^0-9.,]/g,''); navigator.clipboard.writeText(t); });
@@ -433,7 +524,8 @@ document.getElementById('copyPct').addEventListener('click',()=>{ const t=docume
 const historySheet=document.getElementById('historySheet');
 const settingsSheet=document.getElementById('settingsSheet');
 document.getElementById('btnOpenHistory').addEventListener('click',()=>openSheet(historySheet));
-document.getElementById('btnOpenHistory2').addEventListener('click',()=>openSheet(historySheet));
+const btnOpenHistory2=document.getElementById('btnOpenHistory2');
+if(btnOpenHistory2) btnOpenHistory2.addEventListener('click',()=>openSheet(historySheet));
 document.getElementById('btnHistoryClose').addEventListener('click',()=>closeSheet(historySheet));
 document.getElementById('btnOpenSettings').addEventListener('click',()=>openSheet(settingsSheet));
 document.getElementById('btnSettingsClose').addEventListener('click',()=>closeSheet(settingsSheet));
