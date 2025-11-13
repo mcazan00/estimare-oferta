@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Estimator ofertă – Result-first</title>
+  <title>Estimator ofertă – simplu</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    :root { --pine:#2E443E; --mist:#F7F7F7; --slate:#A9BFCF; --earth:#8B7355; }
+    :root { --pine:#2E443E; --mist:#F7F7F7; }
     html,body{ background:var(--mist); color:var(--pine); font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
     .card{ background:#fff; border:1px solid #EAEAEA; border-radius:20px; box-shadow:0 4px 18px rgba(0,0,0,.04); }
     .pill{ border-radius:999px; }
@@ -24,11 +24,11 @@
 <body class="min-h-screen">
   <div class="max-w-4xl mx-auto px-4 md:px-6 py-6 space-y-6">
 
-    <!-- Header simplu + acțiuni -->
+    <!-- Header + acțiuni -->
     <header class="flex items-center justify-between gap-3">
       <div class="space-y-1">
         <h1 class="text-2xl md:text-3xl font-semibold tracking-tight">Estimator ofertă</h1>
-        <p class="text-sm text-gray-600">Rezultat imediat. Istoricul și setările sunt în „sertare”.</p>
+        <p class="text-sm text-gray-600">Introdu valoarea licitației → Calculează → vezi estimarea.</p>
       </div>
       <div class="flex gap-2">
         <button id="btnOpenHistory" class="pill px-4 py-2 ghost hover:bg-gray-50 text-sm">Istoric</button>
@@ -36,31 +36,21 @@
       </div>
     </header>
 
-    <!-- RESULT-FIRST: cardul principal sus -->
+    <!-- Ecran principal minimal -->
     <section class="card p-5 md:p-6 space-y-4">
-      <!-- Inputs principale -->
-      <div class="grid md:grid-cols-2 gap-3">
+      <div class="grid md:grid-cols-[1fr_auto] gap-3">
         <label class="block">
           <span class="text-sm text-gray-700">Valoare licitație</span>
           <input id="newVL" type="number" step="0.01" placeholder="ex. 1,250,000"
                  class="mt-1 pill w-full px-4 py-3 ghost focus:outline-none focus:ring-2 focus:ring-emerald-600">
         </label>
-        <label class="block">
-          <span class="text-sm text-gray-700">Greutatea prețului (%)</span>
-          <div class="mt-1 flex gap-2">
-            <input id="newPondere" type="number" step="0.01" placeholder="ex. 60"
-                   class="pill w-full px-4 py-3 ghost focus:outline-none focus:ring-2 focus:ring-emerald-600">
-            <div class="flex gap-1">
-              <button data-preset-pond="40" class="pill px-3 py-2 ghost text-xs">40</button>
-              <button data-preset-pond="60" class="pill px-3 py-2 ghost text-xs">60</button>
-              <button data-preset-pond="80" class="pill px-3 py-2 ghost text-xs">80</button>
-            </div>
-          </div>
-        </label>
+        <div class="flex items-end">
+          <button id="btnCalc" class="pill px-5 py-3 primary hover:opacity-90 w-full md:w-auto">Calculează</button>
+        </div>
       </div>
 
-      <!-- Estimare live -->
-      <div class="rounded-2xl border border-gray-200 bg-white p-4 md:p-5 space-y-3">
+      <!-- Estimare (apare după click) -->
+      <div id="estimateBox" class="rounded-2xl border border-gray-200 bg-white p-4 md:p-5 space-y-3 hidden">
         <div class="text-sm text-gray-600">Estimare</div>
         <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
           <div class="flex items-center gap-3">
@@ -77,17 +67,15 @@
         </div>
       </div>
 
-      <!-- Quick choices -->
+      <!-- Opțiuni rapide (după ce ai VL & istoric) -->
       <div>
         <div class="text-xs text-gray-500 mb-1">Alege dintr-un click</div>
         <div id="quickChips" class="flex flex-wrap gap-2"></div>
       </div>
 
-      <!-- Pe scurt (3 chips) -->
+      <!-- Pe scurt -->
       <div class="sep rounded my-1"></div>
-      <div class="flex items-center justify-between">
-        <div id="chips" class="flex flex-wrap gap-2"></div>
-      </div>
+      <div id="chips" class="flex flex-wrap gap-2"></div>
       <div id="confidence" class="text-sm text-gray-700"></div>
     </section>
 
@@ -202,12 +190,13 @@
   </div>
 
 <script>
-/* ====== STATE (robust) ====== */
-const SCHEMA_VERSION=2;
+/* ====== STATE ====== */
+const SCHEMA_VERSION=3;
 const state={
   rows:[],
   settings:{clampMin:50, clampMax:120, costMin:null, plafonMax:null},
-  _bandLow:null,_bandHigh:null,_typical:null,_bestKey:'echilibrat',_a:0,_b:0,
+  _bandLow:null,_bandHigh:null,_typical:null,
+  _a:0,_b:0,_r2:0,_pondEffective:false,_meanPond:null,
   _deletedBuffer:null,_undoTimer:null
 };
 
@@ -216,6 +205,7 @@ const fmt=(x,d=0)=>x===null||Number.isNaN(x)?'—':x.toLocaleString('ro-RO',{max
 const clamp=(x,lo,hi)=>Math.max(lo,Math.min(hi,x));
 const clamp01=x=>clamp(x,0,1);
 const mean=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:NaN;
+const variance=a=>{ if(a.length<2) return 0; const m=mean(a); return a.reduce((s,v)=>s+(v-m)*(v-m),0)/a.length; };
 const percentile=(arr,p)=>{ if(!arr.length) return NaN; const s=[...arr].sort((a,b)=>a-b); const idx=clamp01(p)*(s.length-1); const lo=Math.floor(idx),hi=Math.ceil(idx); if(lo===hi) return s[lo]; const t=idx-lo; return s[lo]*(1-t)+s[hi]*t; };
 function toNumber(x){ if(x==null) return NaN; if(typeof x==='number') return x; const s=String(x).replace(/\u00A0|\s|\./g,'').replace(',','.'); const v=Number(s); return Number.isFinite(v)?v:NaN; }
 function chip(txt, kind='gray'){
@@ -229,7 +219,7 @@ function escapeHTML(s){ return String(s||'').replace(/[&<>"']/g,m=>({ '&':'&amp;
 function saveAll(){ localStorage.setItem('licit_s_v',String(SCHEMA_VERSION)); localStorage.setItem('licit_rows',JSON.stringify(state.rows)); localStorage.setItem('licit_settings',JSON.stringify(state.settings)); }
 function loadAll(){ try{ state.rows=JSON.parse(localStorage.getItem('licit_rows')||'[]'); }catch{} try{ state.settings={...state.settings,...(JSON.parse(localStorage.getItem('licit_settings')||'{}'))}; }catch{} }
 
-/* ====== CSV robust ====== */
+/* ====== CSV ====== */
 function detectDelimiter(line){ const c=[',',';','\t']; let best=',',mx=0; for(const d of c){ const n=line.split(d).length; if(n>mx){mx=n; best=d;} } return best; }
 function parseCSVQuoted(text){
   const lines=text.split(/\r?\n/).filter(l=>l.trim().length); if(!lines.length) return [];
@@ -282,11 +272,10 @@ function recompute(){
     return {...r,winPct,ourPct,diffPct};
   }).filter(r=>Number.isFinite(r.winPct)&&Number.isFinite(r.pondere));
   saveAll();
-  const cnt=document.querySelectorAll('#dataCount'); cnt.forEach(el=>el.textContent=state.rows.length);
+  document.querySelectorAll('#dataCount').forEach(el=>el.textContent=state.rows.length);
   renderSummary();
   renderTable();
   updateQuickChips();
-  liveEstimate(); // actualizează imediat
 }
 function renderSummary(){
   const chips=document.getElementById('chips');
@@ -295,20 +284,38 @@ function renderSummary(){
 
   const wins=state.rows.map(r=>r.winPct).filter(Number.isFinite);
   const diffs=state.rows.map(r=>r.diffPct).filter(Number.isFinite);
+  const w=state.rows.map(r=>r.pondere).filter(Number.isFinite);
   const typ=percentile(wins,0.5), low=percentile(wins,0.4), high=percentile(wins,0.6);
+  state._typical=typ; state._bandLow=low; state._bandHigh=high;
+
+  // regresie simplă winPct ~ a + b * pondere
+  const mx=mean(w), my=mean(wins);
+  let num=0, den=0, ssTot=0, ssRes=0;
+  for(let i=0;i<wins.length;i++){ num+=(w[i]-mx)*(wins[i]-my); den+=(w[i]-mx)**2; }
+  const b=den===0?0:num/den; const a=my-b*mx;
+  // R²
+  for(let i=0;i<wins.length;i++){
+    const y=wins[i], yhat=a+b*w[i];
+    ssTot+=(y-my)*(y-my);
+    ssRes+=(y-yhat)*(y-yhat);
+  }
+  const r2 = ssTot===0 ? 0 : 1 - ssRes/ssTot;
+
+  state._a=a; state._b=b; state._r2=r2; state._meanPond=mx;
+
+  // criteriu „influențează?”
+  // praguri blânde: |b| >= 0.001 (0.1 pp per 1% pondere) și R² >= 0.05 și var(pondere) > 0
+  const pondVar = variance(w);
+  state._pondEffective = (Math.abs(b) >= 0.001) && (r2 >= 0.05) && (pondVar > 0);
+
   const closeRate=Math.round(100*(diffs.filter(d=>Math.abs(d)<=0.01).length/diffs.length));
   const nearColor=closeRate>=60?'green':(closeRate>=30?'yellow':'red');
 
   chips.innerHTML=[
     chip(`De obicei: ${fmt(typ*100,1)}%`,'green'),
     chip(`Interval: ${fmt(low*100,1)}–${fmt(high*100,1)}%`,'gray'),
-    chip(`Aproape în ${closeRate}% din cazuri`,nearColor)
+    chip(state._pondEffective ? 'Ponderea influențează recomandarea' : 'Ponderea NU influențează', state._pondEffective?'yellow':'gray')
   ].join('');
-
-  const w=state.rows.map(r=>r.pondere), mx=mean(w), my=mean(wins);
-  let num=0,den=0; for(let i=0;i<wins.length;i++){ num+=(w[i]-mx)*(wins[i]-my); den+=(w[i]-mx)**2; }
-  state._b=den===0?0:num/den; state._a=my-state._b*mx;
-  state._typical=typ; state._bandLow=low; state._bandHigh=high;
 
   const width=Math.abs(high-low), n=state.rows.length;
   let score=0; if(n>=3) score+=Math.min(1,(n-3)/7)*0.6; score+=(1-clamp((width-0.02)/0.1,0,1))*0.4;
@@ -346,40 +353,40 @@ function clampPct(p){
   const hi=(toNumber(document.getElementById('inClampMax')?.value)||state.settings.clampMax)/100;
   return clamp(p,lo,hi);
 }
-function bestEstimate(vl,pond){
-  const eq=clampPct(state._typical||0.9);
-  const ad=clampPct((state._a||0)+(state._b||0)*pond);
-  if(!Number.isFinite(pond) || !isFinite(ad) || ad<=0) return {label:'Ca de obicei', pct:eq, note:'aliniat cu modul în care se câștigă de obicei'};
-  const mid=(state._bandLow+state._bandHigh)/2;
-  return Math.abs(ad-mid)<Math.abs(eq-mid)
-    ? {label:'Adaptată după greutatea prețului', pct:ad, note:'se ajustează după cât contează prețul'}
-    : {label:'Ca de obicei', pct:eq, note:'aliniat cu modul în care se câștigă de obicei'};
+function bestEstimate(vl){
+  if(!Number.isFinite(state._typical)){ return {pct:NaN, label:'—', note:''}; }
+  // dacă ponderea influențează, folosesc adaptiv cu media ponderilor (fără să cer input pe ecranul principal)
+  if(state._pondEffective && Number.isFinite(state._meanPond)){
+    const p = clampPct(state._a + state._b * state._meanPond);
+    return {pct:p, label:'Adaptată după istoricul tău', note:`Ponderea prețului contează; am folosit media din istoric (${fmt(state._meanPond,1)}%).`};
+  }
+  // altfel, „ca de obicei”
+  return {pct:clampPct(state._typical), label:'Ca de obicei', note:'Ignorăm ponderea (nu influențează semnificativ în istoricul tău).'};
 }
 function renderWarnings(val){
-  const w=document.getElementById('warnings');
-  w.innerHTML='';
+  const w=document.getElementById('warnings'); w.innerHTML='';
   const cost=toNumber(document.getElementById('inCostMin')?.value);
-  // SCOATEM „peste plafon”
   if(Number.isFinite(cost) && val<cost){
     w.innerHTML+=`<span class="pill px-3 py-1 bg-rose-100 text-rose-800 text-sm">Sub cost: +${fmt((cost/val-1)*100,1)}%</span>`;
   }
 }
-function liveEstimate(){
+function calculate(){
+  const box=document.getElementById('estimateBox');
   const vl=toNumber(document.getElementById('newVL').value);
-  const p=toNumber(document.getElementById('newPondere').value);
-  if(!Number.isFinite(vl)||vl<=0||!state._typical){
-    document.getElementById('estPct').textContent='—';
-    document.getElementById('estVal').textContent='—';
-    document.getElementById('strategyNote').textContent='';
-    document.getElementById('warnings').innerHTML='';
-    return;
-  }
-  const rec=bestEstimate(vl,p);
+  if(!Number.isFinite(vl)||vl<=0){ alert('Introdu o valoare a licitației > 0'); return; }
+  if(!state._typical){ alert('Adaugă mai întâi istoricul.'); return; }
+
+  const rec=bestEstimate(vl);
   const val=vl*rec.pct;
+
   document.getElementById('estPct').textContent = `${fmt(rec.pct*100,2)}%`;
   document.getElementById('estVal').textContent = `≈ ${fmt(val,0)}`;
-  document.getElementById('strategyNote').textContent = `Strategie: ${rec.label} — ${rec.note}.`;
+  document.getElementById('strategyNote').textContent = `Strategie: ${rec.label} — ${rec.note}`;
   renderWarnings(val);
+  box.classList.remove('hidden');
+
+  // actualizez și quickChips
+  updateQuickChips();
 }
 function updateQuickChips(){
   const box=document.getElementById('quickChips');
@@ -398,9 +405,8 @@ function editNote(i){ const cur=state.rows[i].nota||''; const val=prompt('Notă 
 function removeRow(i){ const rem=state.rows.splice(i,1)[0]; state._deletedBuffer={row:rem,index:i}; recompute(); showToast('Rând șters.'); }
 function showToast(msg){ const t=document.getElementById('toast'); document.getElementById('toastMsg').textContent=msg; t.classList.remove('hidden'); clearTimeout(state._undoTimer); state._undoTimer=setTimeout(()=>{ hideToast(); state._deletedBuffer=null; },5000); }
 function hideToast(){ document.getElementById('toast').classList.add('hidden'); }
-document.getElementById('toastUndo').addEventListener('click',()=>{ if(state._deletedBuffer){ const {row,index}=state._deletedBuffer; state.rows.splice(index,0,row); state._deletedBuffer=null; recompute(); } hideToast(); });
 
-/* ====== I/O ====== */
+/* ====== I/O + Sheets ====== */
 function parseCSV(text){ try{ return parseCSVQuoted(text); }catch{ alert('CSV invalid.'); return []; } }
 function openSheet(el){ el.classList.add('open'); document.body.style.overflow='hidden'; }
 function closeSheet(el){ el.classList.remove('open'); document.body.style.overflow=''; }
@@ -408,20 +414,8 @@ function closeSheet(el){ el.classList.remove('open'); document.body.style.overfl
 /* ====== INIT & events ====== */
 loadAll(); recompute();
 
-/* Paste detector global: dacă pare CSV, oferim import rapid */
-document.addEventListener('paste', (e)=>{
-  const t=(e.clipboardData || window.clipboardData).getData('text');
-  if(!t) return;
-  const looksCSV = /(valoare.*licit|valoare.*noi|castig|winner|pondere)/i.test(t) && /[,;\t]/.test(t);
-  if(looksCSV){ if(confirm('Am detectat un CSV. Îl import?')){ const rows=parseCSV(t); if(rows.length){ state.rows=rows; recompute(); } } }
-});
+document.getElementById('btnCalc').addEventListener('click', calculate);
 
-/* Live calc pe inputuri */
-['newVL','newPondere'].forEach(id=>{
-  document.getElementById(id).addEventListener('input',()=>{ updateQuickChips(); liveEstimate(); renderSummary(); });
-});
-
-/* Quick chips click */
 document.getElementById('quickChips').addEventListener('click',(e)=>{
   const btn=e.target.closest('button[data-pct]'); if(!btn) return;
   const vl=toNumber(document.getElementById('newVL').value); if(!Number.isFinite(vl)||vl<=0){ alert('Introdu VL.'); return; }
@@ -430,13 +424,12 @@ document.getElementById('quickChips').addEventListener('click',(e)=>{
   document.getElementById('estVal').textContent=`≈ ${fmt(val,0)}`;
   document.getElementById('strategyNote').textContent='Strategie selectată manual.';
   renderWarnings(val);
+  document.getElementById('estimateBox').classList.remove('hidden');
 });
 
-/* Copy */
 document.getElementById('copySum').addEventListener('click',()=>{ const t=document.getElementById('estVal').textContent.replace(/[^0-9.,]/g,''); navigator.clipboard.writeText(t); });
 document.getElementById('copyPct').addEventListener('click',()=>{ const t=document.getElementById('estPct').textContent.replace(/[^0-9.,]/g,''); navigator.clipboard.writeText(t); });
 
-/* Sheets open/close */
 const historySheet=document.getElementById('historySheet');
 const settingsSheet=document.getElementById('settingsSheet');
 document.getElementById('btnOpenHistory').addEventListener('click',()=>openSheet(historySheet));
@@ -445,20 +438,15 @@ document.getElementById('btnHistoryClose').addEventListener('click',()=>closeShe
 document.getElementById('btnOpenSettings').addEventListener('click',()=>openSheet(settingsSheet));
 document.getElementById('btnSettingsClose').addEventListener('click',()=>closeSheet(settingsSheet));
 
-/* CSV file input */
 document.getElementById('fileInput').addEventListener('change',()=>{
   const f=fileInput.files[0]; if(!f) return; const r=new FileReader();
   r.onload=e=>{ const rows=parseCSV(e.target.result); if(!rows.length){ alert('CSV invalid.'); return; } state.rows=rows; recompute(); };
   r.readAsText(f);
 });
-
-/* Paste CSV (manual din sheet) */
 document.getElementById('btnPaste').addEventListener('click',()=>{
   const t=prompt('Lipește aici CSV-ul (cu header):'); if(!t) return;
   const rows=parseCSV(t); if(!rows.length){ alert('CSV invalid.'); return; } state.rows=rows; recompute();
 });
-
-/* CSV sample + export */
 document.getElementById('btnSample').addEventListener('click',()=>{
   const sample=[['valoare_licitatie','valoare_noi','valoare_castigator','pondere_valoare_pct','nota'],
   [1000000,950000,930000,60,'concurență 4 ofertanți'],
@@ -469,7 +457,6 @@ document.getElementById('btnSample').addEventListener('click',()=>{
 });
 document.getElementById('btnExport').addEventListener('click',()=>download('istoric_licitatii.csv',rowsToCSV(state.rows),'text/csv'));
 
-/* Export/Import JSON în Setări */
 document.getElementById('btnExportJson').addEventListener('click',()=>{
   const payload={schema:SCHEMA_VERSION,settings:state.settings,rows:state.rows};
   download('istoric_licitatii.json',JSON.stringify(payload,null,2),'application/json');
@@ -508,7 +495,7 @@ document.getElementById('btnAdd').addEventListener('click',()=>{
   recompute();
 });
 
-/* Setări (în sheet) */
+/* Setări */
 ['inClampMin','inClampMax','inCostMin','inPlafonMax'].forEach(id=>{
   const el=document.getElementById(id);
   el.addEventListener('input',()=>{
@@ -516,23 +503,12 @@ document.getElementById('btnAdd').addEventListener('click',()=>{
     state.settings.clampMax = toNumber(document.getElementById('inClampMax').value)||120;
     state.settings.costMin  = toNumber(document.getElementById('inCostMin').value);
     state.settings.plafonMax= toNumber(document.getElementById('inPlafonMax').value);
-    saveAll(); updateQuickChips(); liveEstimate();
+    saveAll();
   });
 });
 
-/* Reset total */
-document.getElementById('btnReset').addEventListener('click',()=>{
-  if(!confirm('Șterg toate datele și setările?')) return;
-  state.rows=[]; state.settings={clampMin:50,clampMax:120,costMin:null,plafonMax:null};
-  ['inClampMin','inClampMax','inCostMin','inPlafonMax'].forEach((id,i)=>{
-    const def=[50,120,'',''][i]; const el=document.getElementById(id); if(el) el.value=def;
-  });
-  ['newVL','newPondere'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
-  recompute();
-});
-
-/* UNDO hint */
-function setUndoHint(msg){ const el=document.getElementById('undoHint'); if(!el) return; el.textContent=msg||''; }
+/* UNDO */
+document.getElementById('toastUndo').addEventListener('click',()=>{ if(state._deletedBuffer){ const {row,index}=state._deletedBuffer; state.rows.splice(index,0,row); state._deletedBuffer=null; recompute(); } hideToast(); });
 </script>
 </body>
 </html>
